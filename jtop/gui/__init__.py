@@ -26,6 +26,7 @@ from .pmem import MEM
 from .pcontrol import CTRL
 from .psysfs import SYSFS
 from .pinfo import INFO
+from .pups import UPS
 
 try:
     from jtop.core.hw_detect import is_thor as _is_thor_fn
