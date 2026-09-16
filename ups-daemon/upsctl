@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""upsctl — 查看 nx3 上 UPS Power Module (C) 的电池状态。
+
+用法:
+  upsctl              # 彩色单次快照(读守护进程状态文件)
+  upsctl watch        # 每秒刷新
+  upsctl json         # 原始 JSON
+  upsctl read         # 绕过守护进程, 直接读 I2C 一次(诊断用)
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+
+STATE = "/run/ups-monitor/status.json"
+UPSMON = "/usr/local/bin/upsmon.py"
+
+COLORS = {
+    "AC": "\033[32m", "BATTERY": "\033[32m", "WARN": "\033[33m", "AC_BATT_LOW": "\033[33m",
+    "LOW": "\033[33m", "SHUTDOWN_PENDING": "\033[31m", "CRIT": "\033[31m",
+    "SHUTTING_DOWN": "\033[31m", "SENSOR_LOST": "\033[31m", "DRY_RUN_SHUTDOWN": "\033[35m",
+    "INIT": "\033[90m",
+}
+RESET = "\033[0m"
+
+
+def load():
+    if not os.path.exists(STATE):
+        return None
+    try:
+        with open(STATE) as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def render(d):
+    if not d:
+        print("未找到状态文件 %s\n守护进程可能未运行: systemctl status ups-monitor" % STATE)
+        return
+    c = COLORS.get(d.get("state", ""), "")
+    if d.get("state") == "INIT":
+        mode = "判定中"
+    else:
+        mode = "电池供电" if d.get("on_battery") else "AC 供电"
+    i = d.get("ema_i")
+    sign = "+" if (i or 0) > 0 else ""
+    flow = "" if i is None else ("充电" if i > 0 else "放电")
+    eta = d.get("eta_min")
+    print("%sUPS Power Module (C) — %s (%s)%s" % (c, d.get("state"), mode, RESET))
+    print("  电池电压(平滑) : %8.3f V   (瞬时 %s V)" % (d.get("ema_v") or 0, d.get("bus_v")))
+    print("  电流           : %s%7.3f A   %s" % (sign, i or 0, flow))
+    print("  功率           : %8.3f W" % (d.get("power_w") or 0))
+    print("  电量(电压估算) : %8.1f %%" % (d.get("percent") or 0))
+    print("  剩余(斜率外推) : %s" % ("—" if eta is None else "%.0f 分钟" % eta))
+    t = d.get("thresholds", {})
+    print("  阈值           : warn %.1f / low %.1f / shutdown %.1f / crit %.1f V" % (
+        t.get("warn_v", 0), t.get("low_v", 0), t.get("shutdown_v", 0), t.get("crit_v", 0)))
+    if d.get("dry_run"):
+        print("  模式           : DRY-RUN (仅记录, 不会真的关机)")
+    if d.get("sensor_fail"):
+        print("  I2C 失败次数   : %d" % d["sensor_fail"])
+    print("  更新于         : %s" % d.get("iso"))
+
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+    if cmd == "json":
+        d = load()
+        print(json.dumps(d, ensure_ascii=False, indent=2) if d else "{}")
+    elif cmd == "read":
+        os.execv("/usr/bin/python3", ["python3", UPSMON, "--once"])
+    elif cmd == "watch":
+        try:
+            while True:
+                subprocess.run(["clear"] if os.environ.get("TERM") else ["true"], check=False)
+                render(load())
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+    else:
+        render(load())
+
+
+if __name__ == "__main__":
+    main()

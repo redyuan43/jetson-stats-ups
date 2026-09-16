@@ -1,0 +1,24 @@
+[Unit]
+Description=Waveshare UPS Power Module (C) monitor & low-battery auto-shutdown
+Documentation=file:/usr/local/lib/ups-monitor/README.md
+After=multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/upsmon.py -c /etc/ups-monitor.conf
+Restart=always
+RestartSec=5
+# 关机流程本身会等待本服务退出, 给足收尾时间
+TimeoutStopSec=40
+KillSignal=SIGTERM
+# 需要 root: 写 CONFIG 到 I2C + nvpmodel + systemctl poweroff
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=upsmon
+# I2C 设备就绪后再启动(After 对不存在的单元是安全的; 不用 Requires, 避免设备单元缺失导致启动失败)
+After=dev-i2c\x2d7.device
+
+[Install]
+WantedBy=multi-user.target
