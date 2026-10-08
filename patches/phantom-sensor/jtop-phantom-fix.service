@@ -1,0 +1,7 @@
+[Unit]
+Description=Re-apply jtop phantom-sensor patch (idempotent)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jtop-phantom-fix.sh
